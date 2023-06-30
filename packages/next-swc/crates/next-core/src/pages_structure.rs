@@ -210,13 +210,11 @@ async fn get_pages_structure_for_root_directory(
                             ));
                         }
                         _ => {
-                            let specificity = entry_specificity(SpecificityVc::exact(), name, 0);
                             children.push((
                                 name,
                                 get_pages_structure_for_directory(
                                     *dir_project_path,
                                     next_router_path.join(name),
-                                    specificity,
                                     1,
                                     page_extensions,
                                 ),

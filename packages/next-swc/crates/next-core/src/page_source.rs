@@ -15,6 +15,7 @@ use turbopack_binding::{
         core::{
             asset::{AssetVc, AssetsVc},
             chunk::{ChunkingContextVc, EvaluatableAssetVc, EvaluatableAssetsVc},
+            compile_time_info::CompileTimeInfoVc,
             context::{AssetContext, AssetContextVc},
             environment::ServerAddrVc,
             reference_type::{EntryReferenceSubType, InnerAssetsVc, ReferenceType},
@@ -30,6 +31,7 @@ use turbopack_binding::{
                 ContentSourceData, ContentSourceVc,
             },
         },
+        ecmascript::chunk::EcmascriptChunkingContextVc,
         env::ProcessEnvAssetVc,
         node::{
             debug::should_debug,
@@ -52,9 +54,8 @@ use crate::{
     mode::NextMode,
     next_client::{
         context::{
-            get_client_assets_path, get_client_chunking_context, get_client_compile_time_info,
-            get_client_module_options_context, get_client_resolve_options_context,
-            get_client_runtime_entries, ClientContextType,
+            get_client_assets_path, get_client_chunking_context, get_client_module_options_context,
+            get_client_resolve_options_context, get_client_runtime_entries, ClientContextType,
         },
         transition::NextClientTransition,
     },
@@ -90,7 +91,8 @@ pub async fn create_page_source(
     node_root: FileSystemPathVc,
     client_root: FileSystemPathVc,
     env: ProcessEnvVc,
-    browserslist_query: &str,
+    client_chunking_context: EcmascriptChunkingContextVc,
+    client_compile_time_info: CompileTimeInfoVc,
     next_config: NextConfigVc,
     server_addr: ServerAddrVc,
 ) -> Result<ContentSourceVc> {
@@ -105,7 +107,6 @@ pub async fn create_page_source(
     let server_ty = Value::new(ServerContextType::Pages { pages_dir });
     let server_data_ty = Value::new(ServerContextType::PagesData { pages_dir });
 
-    let client_compile_time_info = get_client_compile_time_info(mode, browserslist_query);
     let client_module_options_context = get_client_module_options_context(
         project_root,
         execution_context,
@@ -122,12 +123,6 @@ pub async fn create_page_source(
         execution_context,
     );
 
-    let client_chunking_context = get_client_chunking_context(
-        project_root,
-        client_root,
-        client_compile_time_info.environment(),
-    );
-
     let client_runtime_entries = get_client_runtime_entries(
         project_root,
         env,
@@ -139,7 +134,7 @@ pub async fn create_page_source(
 
     let next_client_transition = NextClientTransition {
         is_app: false,
-        client_chunking_context,
+        client_chunking_context: client_chunking_context.into(),
         client_module_options_context,
         client_resolve_options_context,
         client_compile_time_info,
@@ -154,13 +149,19 @@ pub async fn create_page_source(
         project_root,
         node_root.join("edge"),
         node_root.join("edge/chunks"),
-        get_client_assets_path(client_root),
+        get_client_assets_path(client_root, mode),
         edge_compile_time_info.environment(),
     )
     .reference_chunk_source_maps(should_debug("page_source"))
-    .build();
-    let edge_resolve_options_context =
-        get_edge_resolve_options_context(project_root, server_ty, next_config, execution_context);
+    .build()
+    .into();
+    let edge_resolve_options_context = get_edge_resolve_options_context(
+        project_root,
+        server_ty,
+        mode,
+        next_config,
+        execution_context,
+    );
 
     let next_edge_transition = NextEdgeRouteTransition {
         edge_compile_time_info,
@@ -211,7 +212,7 @@ pub async fn create_page_source(
                     execution_context,
                     client_ty,
                     mode,
-                    client_root,
+                    client_chunking_context,
                     client_compile_time_info,
                     next_config,
                 )
@@ -274,6 +275,7 @@ pub async fn create_page_source(
             env,
             server_context,
             client_context,
+            client_chunking_context.into(),
             pages_dir,
             page_extensions,
             fallback_runtime_entries,
@@ -315,6 +317,7 @@ pub async fn create_page_source(
             env,
             server_context,
             client_context,
+            client_chunking_context.into(),
             pages_dir,
             page_extensions,
             fallback_runtime_entries,
@@ -341,7 +344,7 @@ async fn create_page_source_for_file(
     server_context: AssetContextVc,
     server_data_context: AssetContextVc,
     client_context: AssetContextVc,
-    pages_dir: FileSystemPathVc,
+    _pages_dir: FileSystemPathVc,
     page_asset: AssetVc,
     runtime_entries: AssetsVc,
     fallback_page: DevHtmlAssetVc,
@@ -352,15 +355,18 @@ async fn create_page_source_for_file(
     node_root: FileSystemPathVc,
     render_data: JsonValueVc,
 ) -> Result<ContentSourceVc> {
+    let mode = NextMode::Development;
+
     let server_chunking_context = DevChunkingContextVc::builder(
         project_path,
         node_path,
         node_path.join("chunks"),
-        get_client_assets_path(client_root),
+        get_client_assets_path(client_root, mode),
         server_context.compile_time_info().environment(),
     )
     .reference_chunk_source_maps(should_debug("page_source"))
-    .build();
+    .build()
+    .into();
 
     let data_node_path = node_path.join("data");
 
@@ -368,16 +374,18 @@ async fn create_page_source_for_file(
         project_path,
         data_node_path,
         data_node_path.join("chunks"),
-        get_client_assets_path(client_root),
+        get_client_assets_path(client_root, mode),
         server_context.compile_time_info().environment(),
     )
     .reference_chunk_source_maps(should_debug("page_source"))
-    .build();
+    .build()
+    .into();
 
     let client_chunking_context = get_client_chunking_context(
         project_path,
         client_root,
         client_context.compile_time_info().environment(),
+        mode,
     );
 
     let pathname = pathname_for_path(client_root, client_path, PathType::Page);
@@ -474,7 +482,7 @@ async fn create_page_source_for_file(
             create_page_loader(
                 client_root,
                 client_context,
-                client_chunking_context,
+                client_chunking_context.into(),
                 page_asset,
                 pathname,
             ),
@@ -504,6 +512,7 @@ async fn create_not_found_page_source(
     env: ProcessEnvVc,
     server_context: AssetContextVc,
     client_context: AssetContextVc,
+    client_chunking_context: ChunkingContextVc,
     pages_dir: FileSystemPathVc,
     page_extensions: StringsVc,
     runtime_entries: AssetsVc,
@@ -515,21 +524,17 @@ async fn create_not_found_page_source(
     route_matcher: RouteMatcherVc,
     render_data: JsonValueVc,
 ) -> Result<ContentSourceVc> {
+    let mode = NextMode::Development;
     let server_chunking_context = DevChunkingContextVc::builder(
         project_path,
         node_path,
         node_path.join("chunks"),
-        get_client_assets_path(client_root),
+        get_client_assets_path(client_root, mode),
         server_context.compile_time_info().environment(),
     )
     .reference_chunk_source_maps(should_debug("page_source"))
-    .build();
-
-    let client_chunking_context = get_client_chunking_context(
-        project_path,
-        client_root,
-        client_context.compile_time_info().environment(),
-    );
+    .build()
+    .into();
 
     let (page_asset, pathname) =
         if let Some(not_found_page_asset) = get_not_found_page(pages_dir, page_extensions).await? {

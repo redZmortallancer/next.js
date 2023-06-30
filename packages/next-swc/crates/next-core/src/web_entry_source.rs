@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{anyhow, Result};
 use turbopack_binding::{
     turbo::{
@@ -6,25 +8,29 @@ use turbopack_binding::{
     },
     turbopack::{
         core::{
-            chunk::ChunkableAssetVc,
+            chunk::{ChunkableAssetVc, ChunkingContextVc},
             compile_time_defines,
             compile_time_info::{
                 CompileTimeDefines, CompileTimeDefinesVc, CompileTimeInfo, CompileTimeInfoVc,
                 FreeVarReferencesVc,
             },
+            context::AssetContextVc,
             environment::{BrowserEnvironment, EnvironmentVc, ExecutionEnvironment},
             free_var_references,
             reference_type::{EntryReferenceSubType, ReferenceType},
             resolve::{origin::PlainResolveOriginVc, parse::RequestVc},
             source_asset::SourceAssetVc,
         },
-        dev::react_refresh::assert_can_resolve_react_refresh,
+        dev::{react_refresh::assert_can_resolve_react_refresh, DevChunkingContextVc},
         dev_server::{
             html::DevHtmlAssetVc,
             source::{asset_graph::AssetGraphContentSourceVc, ContentSourceVc},
         },
         node::execution_context::ExecutionContextVc,
-        turbopack::ecmascript::EcmascriptModuleAssetVc,
+        turbopack::{
+            ecmascript::EcmascriptModuleAssetVc, transition::TransitionsByNameVc,
+            ModuleAssetContextVc,
+        },
     },
 };
 
@@ -32,11 +38,8 @@ use crate::{
     embed_js::next_js_file_path,
     mode::NextMode,
     next_client::{
-        context::{
-            get_client_asset_context, get_client_chunking_context,
-            get_client_resolve_options_context, ClientContextType,
-        },
-        RuntimeEntriesVc, RuntimeEntry,
+        context::{get_client_resolve_options_context, ClientContextType},
+        get_client_module_options_context, RuntimeEntriesVc, RuntimeEntry,
     },
     next_config::NextConfigVc,
 };
@@ -109,6 +112,55 @@ async fn get_web_runtime_entries(
 }
 
 #[turbo_tasks::function]
+fn get_web_client_chunking_context(
+    project_path: FileSystemPathVc,
+    client_root: FileSystemPathVc,
+    environment: EnvironmentVc,
+) -> ChunkingContextVc {
+    DevChunkingContextVc::builder(
+        project_path,
+        client_root,
+        client_root.join("_chunks"),
+        client_root.join("_media"),
+        environment,
+    )
+    .hot_module_replacement()
+    .build()
+    .into()
+}
+
+#[turbo_tasks::function]
+fn get_web_client_asset_context(
+    project_path: FileSystemPathVc,
+    execution_context: ExecutionContextVc,
+    compile_time_info: CompileTimeInfoVc,
+    ty: Value<ClientContextType>,
+    mode: NextMode,
+    next_config: NextConfigVc,
+) -> AssetContextVc {
+    let resolve_options_context =
+        get_client_resolve_options_context(project_path, ty, mode, next_config, execution_context);
+    let module_options_context = get_client_module_options_context(
+        project_path,
+        execution_context,
+        compile_time_info.environment(),
+        ty,
+        mode,
+        next_config,
+    );
+
+    let context: AssetContextVc = ModuleAssetContextVc::new(
+        TransitionsByNameVc::cell(HashMap::new()),
+        compile_time_info,
+        module_options_context,
+        resolve_options_context,
+    )
+    .into();
+
+    context
+}
+
+#[turbo_tasks::function]
 pub async fn create_web_entry_source(
     project_root: FileSystemPathVc,
     execution_context: ExecutionContextVc,
@@ -121,7 +173,7 @@ pub async fn create_web_entry_source(
     let ty = Value::new(ClientContextType::Other);
     let mode = NextMode::Development;
     let compile_time_info = get_compile_time_info(browserslist_query);
-    let context = get_client_asset_context(
+    let context = get_web_client_asset_context(
         project_root,
         execution_context,
         compile_time_info,
@@ -130,7 +182,7 @@ pub async fn create_web_entry_source(
         next_config,
     );
     let chunking_context =
-        get_client_chunking_context(project_root, client_root, compile_time_info.environment());
+        get_web_client_chunking_context(project_root, client_root, compile_time_info.environment());
     let entries = get_web_runtime_entries(project_root, ty, mode, next_config, execution_context);
 
     let runtime_entries = entries.resolve_entries(context);

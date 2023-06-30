@@ -5,7 +5,7 @@ use turbopack_binding::{
     turbopack::{
         core::{
             asset::AssetVc,
-            context::{AssetContext, AssetContextVc},
+            context::AssetContext,
             reference_type::{InnerAssetsVc, ReferenceType},
             resolve::ModulePartVc,
         },

@@ -384,9 +384,17 @@ pub async fn insert_next_server_special_aliases(
             );
         }
         ServerContextType::PagesData { .. } => {}
-        ServerContextType::AppSSR { app_dir }
-        | ServerContextType::AppRSC { app_dir }
-        | ServerContextType::AppRoute { app_dir } => {
+        // NOTE(alexkirsz) This logic maps loosely to
+        // `next.js/packages/next/src/build/webpack-config.ts`, where:
+        //
+        // ## RSC
+        //
+        // * always bundles
+        // * maps react -> react/shared-subset (through the "react-server" exports condition)
+        // * maps react-dom -> react-dom/server-rendering-stub
+        // * passes through (react|react-dom|react-server-dom-webpack)/(.*) to
+        //   next/dist/compiled/$1/$2
+        ServerContextType::AppRSC { app_dir, .. } | ServerContextType::AppRoute { app_dir } => {
             import_map.insert_exact_alias(
                 "@opentelemetry/api",
                 // TODO(WEB-625) this actually need to prefer the local version of
@@ -395,27 +403,59 @@ pub async fn insert_next_server_special_aliases(
             );
             import_map.insert_exact_alias(
                 "react",
-                request_to_import_mapping(app_dir, "next/dist/compiled/react"),
-            );
-            import_map.insert_wildcard_alias(
-                "react/",
-                request_to_import_mapping(app_dir, "next/dist/compiled/react/*"),
+                request_to_import_mapping(app_dir, "next/dist/compiled/react/react.shared-subset"),
             );
             import_map.insert_exact_alias(
                 "react-dom",
                 request_to_import_mapping(
                     app_dir,
-                    "next/dist/compiled/react-dom/server-rendering-stub.js",
+                    "next/dist/compiled/react-dom/server-rendering-stub",
                 ),
             );
-            import_map.insert_wildcard_alias(
-                "react-dom/",
-                request_to_import_mapping(app_dir, "next/dist/compiled/react-dom/*"),
+            for (wildcard_alias, request) in [
+                ("react/", "next/dist/compiled/react/*"),
+                ("react-dom/", "next/dist/compiled/react-dom/*"),
+                (
+                    "react-server-dom-webpack/",
+                    "next/dist/compiled/react-server-dom-webpack/*",
+                ),
+            ] {
+                import_map.insert_wildcard_alias(
+                    wildcard_alias,
+                    request_to_import_mapping(app_dir, request),
+                );
+            }
+        }
+        // ## SSR
+        //
+        // * always uses externals, to ensure we're using the same React instance as the Next.js
+        //   runtime
+        // * maps react-dom -> react-dom/server-rendering-stub
+        // * passes through react and (react|react-dom|react-server-dom-webpack)/(.*) to
+        //   next/dist/compiled/react and next/dist/compiled/$1/$2 resp.
+        ServerContextType::AppSSR { .. } => {
+            import_map.insert_exact_alias(
+                "react",
+                external_request_to_import_mapping("next/dist/compiled/react"),
             );
-            import_map.insert_wildcard_alias(
-                "react-server-dom-webpack/",
-                request_to_import_mapping(app_dir, "next/dist/compiled/react-server-dom-webpack/*"),
+            import_map.insert_exact_alias(
+                "react-dom",
+                external_request_to_import_mapping(
+                    "next/dist/compiled/react-dom/server-rendering-stub",
+                ),
             );
+
+            for (wildcard_alias, request) in [
+                ("react/", "next/dist/compiled/react/*"),
+                ("react-dom/", "next/dist/compiled/react-dom/*"),
+                (
+                    "react-server-dom-webpack/",
+                    "next/dist/compiled/react-server-dom-webpack/*",
+                ),
+            ] {
+                let import_mapping = external_request_to_import_mapping(request);
+                import_map.insert_wildcard_alias(wildcard_alias, import_mapping);
+            }
         }
         ServerContextType::Middleware => {}
     }

@@ -1,7 +1,6 @@
 #![feature(async_closure)]
-#![feature(min_specialization)]
-#![feature(box_syntax)]
 #![feature(str_split_remainder)]
+#![feature(type_alias_impl_trait)]
 
 mod app_render;
 mod app_segment_config;
@@ -12,19 +11,23 @@ mod bootstrap;
 mod embed_js;
 pub mod env;
 mod fallback;
+pub mod loader_tree;
 pub mod manifest;
 pub mod mode;
 mod next_build;
 pub mod next_client;
 pub mod next_client_chunks;
 mod next_client_component;
+pub mod next_client_reference;
 pub mod next_config;
+pub mod next_dynamic;
 mod next_edge;
 mod next_font;
 pub mod next_image;
 mod next_import_map;
 mod next_route_matcher;
 pub mod next_server;
+pub mod next_server_component;
 pub mod next_shared;
 mod page_loader;
 mod page_source;
@@ -38,7 +41,10 @@ pub mod url_node;
 mod util;
 mod web_entry_source;
 
-pub use app_source::create_app_source;
+pub use app_source::{
+    app_context, create_app_source, UnsupportedDynamicMetadataIssue,
+    UnsupportedDynamicMetadataIssueVc,
+};
 pub use page_loader::create_page_loader_entry_asset;
 pub use page_source::create_page_source;
 pub use turbopack_binding::{turbopack::node::source_map, *};
