@@ -295,7 +295,7 @@ const nextDev: CliCommand = async (argv) => {
 
     let bindings: any = await loadBindings()
 
-    const project = new bindings.turbo.Project({
+    const project = await bindings.turbo.createProject({
       projectPath: '/workspaces/nextpack/test-app',
       rootPath: '/workspaces/nextpack/test-app',
       watch: true,
