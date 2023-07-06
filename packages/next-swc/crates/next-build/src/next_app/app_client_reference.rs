@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use indexmap::IndexMap;
 use next_core::{
     self,
     next_client_reference::{ClientReference, ClientReferenceType},
@@ -14,9 +15,7 @@ use turbopack_binding::{
             asset::{Asset, AssetVc, AssetsVc},
             chunk::{ChunkableAsset, ChunkingContext, ModuleId as TurbopackModuleId},
         },
-        ecmascript::chunk::{
-            EcmascriptChunkPlaceable, EcmascriptChunkingContextVc, EcmascriptExports,
-        },
+        ecmascript::chunk::{EcmascriptChunkPlaceable, EcmascriptChunkingContextVc},
     },
 };
 
@@ -29,15 +28,15 @@ use crate::manifests::{ClientReferenceManifest, ManifestNode, ManifestNodeEntry,
 /// type needs to load.
 pub async fn compute_app_client_references_chunks(
     app_client_references: &HashSet<ClientReference>,
-    app_client_reference_tys: &HashSet<ClientReferenceType>,
+    app_client_reference_types: &HashSet<ClientReferenceType>,
     client_root: &FileSystemPath,
     node_root: &FileSystemPath,
     client_chunking_context: EcmascriptChunkingContextVc,
     ssr_chunking_context: BuildChunkingContextVc,
     client_reference_manifest: &mut ClientReferenceManifest,
     all_chunks: &mut Vec<AssetVc>,
-) -> Result<HashMap<ClientReferenceType, ClientReferenceChunks>> {
-    let app_client_references_chunks: HashMap<_, _> = app_client_reference_tys
+) -> Result<IndexMap<ClientReferenceType, ClientReferenceChunks>> {
+    let app_client_references_chunks: IndexMap<_, _> = app_client_reference_types
         .iter()
         .map(|client_reference_ty| async move {
             Ok((
@@ -125,50 +124,6 @@ pub async fn compute_app_client_references_chunks(
 
                 let mut ssr_manifest_node = ManifestNode::default();
 
-                match &*ecmascript_client_reference
-                    .client_asset
-                    .get_exports()
-                    .await?
-                {
-                    EcmascriptExports::EsmExports(exports) => {
-                        let exports = exports.await?;
-                        for (export_name, _) in &exports.exports {
-                            client_reference_manifest
-                                .client_modules
-                                .module_exports
-                                .insert(
-                                    get_client_reference_module_key(&*server_path, export_name),
-                                    ManifestNodeEntry {
-                                        name: export_name.clone(),
-                                        id: match client_module_id.clone_value() {
-                                            TurbopackModuleId::String(string) => {
-                                                ModuleId::String(string)
-                                            }
-                                            TurbopackModuleId::Number(number) => {
-                                                ModuleId::Number(number as _)
-                                            }
-                                        },
-                                        chunks: client_chunks_paths.clone(),
-                                        // TODO(WEB-434)
-                                        r#async: false,
-                                    },
-                                );
-                            ssr_manifest_node.module_exports.insert(
-                                export_name.clone(),
-                                ManifestNodeEntry {
-                                    name: export_name.clone(),
-                                    id: convert_module_id(&ssr_module_id),
-                                    chunks: ssr_chunks_paths.clone(),
-                                    // TODO(WEB-434)
-                                    r#async: false,
-                                },
-                            );
-                        }
-                    }
-                    EcmascriptExports::CommonJs => {}
-                    _ => {}
-                }
-
                 client_reference_manifest
                     .client_modules
                     .module_exports
@@ -176,7 +131,7 @@ pub async fn compute_app_client_references_chunks(
                         get_client_reference_module_key(&server_path, "*"),
                         ManifestNodeEntry {
                             name: "*".to_string(),
-                            id: convert_module_id(&client_module_id),
+                            id: (&*client_module_id).into(),
                             chunks: client_chunks_paths.clone(),
                             // TODO(WEB-434)
                             r#async: false,
@@ -187,7 +142,7 @@ pub async fn compute_app_client_references_chunks(
                     "*".to_string(),
                     ManifestNodeEntry {
                         name: "*".to_string(),
-                        id: convert_module_id(&ssr_module_id),
+                        id: (&*ssr_module_id).into(),
                         chunks: ssr_chunks_paths.clone(),
                         // TODO(WEB-434)
                         r#async: false,
@@ -196,7 +151,7 @@ pub async fn compute_app_client_references_chunks(
 
                 client_reference_manifest
                     .ssr_module_mapping
-                    .insert(convert_module_id(&client_module_id), ssr_manifest_node);
+                    .insert((&*client_module_id).into(), ssr_manifest_node);
             }
             ClientReferenceType::CssClientReference(_) => {
                 let client_chunks = &app_client_reference_chunks.client_chunks.await?;
@@ -210,7 +165,7 @@ pub async fn compute_app_client_references_chunks(
             let app_client_reference_ty = app_client_reference.ty();
             let client_reference_chunks = app_client_references_chunks
                 .get(app_client_reference_ty)
-                .expect("client reference chunks not found");
+                .context("client reference chunks not found")?;
             let client_chunks = &client_reference_chunks.client_chunks.await?;
 
             let entry_name = server_component
@@ -257,8 +212,11 @@ pub async fn compute_app_client_references_chunks(
     Ok(app_client_references_chunks)
 }
 
+/// Contains the chunks corresponding to a client reference.
 pub struct ClientReferenceChunks {
+    /// Chunks to be loaded on the client.
     pub client_chunks: AssetsVc,
+    /// Chunks to be loaded on the server for SSR.
     pub ssr_chunks: AssetsVc,
 }
 
@@ -271,9 +229,11 @@ fn get_client_reference_module_key(server_path: &str, export_name: &str) -> Stri
     }
 }
 
-fn convert_module_id(module_id: &TurbopackModuleId) -> ModuleId {
-    match module_id {
-        TurbopackModuleId::String(string) => ModuleId::String(string.clone()),
-        TurbopackModuleId::Number(number) => ModuleId::Number(*number as _),
+impl From<&TurbopackModuleId> for ModuleId {
+    fn from(module_id: &TurbopackModuleId) -> Self {
+        match module_id {
+            TurbopackModuleId::String(string) => ModuleId::String(string.clone()),
+            TurbopackModuleId::Number(number) => ModuleId::Number(*number as _),
+        }
     }
 }

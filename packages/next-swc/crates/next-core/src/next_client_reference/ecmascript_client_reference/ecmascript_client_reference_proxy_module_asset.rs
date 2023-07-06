@@ -47,7 +47,10 @@ impl EcmascriptClientReferenceProxyModuleAssetVc {
     ///
     /// # Arguments
     ///
-    /// TODO
+    /// * `server_module_ident` - The identifier of the server module.
+    /// * `server_asset_context` - The context of the server module.
+    /// * `client_module` - The client module.
+    /// * `ssr_module` - The SSR module.
     #[turbo_tasks::function]
     pub fn new(
         server_module_ident: AssetIdentVc,
@@ -88,6 +91,7 @@ impl EcmascriptClientReferenceProxyModuleAssetVc {
             server_module_path = StringifyJs(&this.server_module_ident.path().to_string().await?)
         )?;
 
+        // See next-flight-loader
         match &*this.client_module.get_exports().await? {
             EcmascriptExports::EsmExports(esm_exports) => {
                 let mut cnt = 0;

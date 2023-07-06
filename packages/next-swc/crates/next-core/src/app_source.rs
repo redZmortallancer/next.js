@@ -3,7 +3,7 @@ use std::{collections::HashMap, io::Write as _, iter::once};
 use anyhow::{bail, Result};
 use indexmap::indexmap;
 use indoc::indoc;
-use turbo_tasks::{primitives::JsonValueVc, TryJoinIterExt, ValueToString};
+use turbo_tasks::primitives::JsonValueVc;
 use turbopack_binding::{
     turbo::{
         tasks::{primitives::StringVc, Value},
@@ -15,9 +15,8 @@ use turbopack_binding::{
             asset::AssetsVc,
             chunk::{ChunkingContextVc, EvaluatableAssetVc, EvaluatableAssetsVc},
             compile_time_info::CompileTimeInfoVc,
-            context::{AssetContext, AssetContextVc},
-            environment::{EnvironmentIntention, ServerAddrVc},
-            issue::{Issue, IssueSeverity, IssueSeverityVc, IssueVc},
+            context::AssetContext,
+            environment::ServerAddrVc,
             reference_type::{
                 EcmaScriptModulesReferenceSubType, EntryReferenceSubType, InnerAssetsVc,
                 ReferenceType,
@@ -35,7 +34,7 @@ use turbopack_binding::{
                 ContentSourceData, ContentSourceVc, NoContentSourceVc,
             },
         },
-        ecmascript::{chunk::EcmascriptChunkingContextVc, utils::FormatIter},
+        ecmascript::chunk::EcmascriptChunkingContextVc,
         env::ProcessEnvAssetVc,
         node::{
             debug::should_debug,
@@ -91,6 +90,7 @@ use crate::{
         get_server_resolve_options_context, ServerContextType,
     },
     util::{render_data, NextRuntime},
+    UnsupportedDynamicMetadataIssue,
 };
 
 fn pathname_to_segments(pathname: &str) -> Result<(Vec<BaseSegment>, RouteType)> {
@@ -353,7 +353,7 @@ fn next_edge_page_transition(
 
 #[allow(clippy::too_many_arguments)]
 #[turbo_tasks::function]
-pub fn app_context(
+fn app_context(
     project_path: FileSystemPathVc,
     execution_context: ExecutionContextVc,
     server_root: FileSystemPathVc,
@@ -1064,52 +1064,5 @@ impl NodeEntry for AppRoute {
     fn entry(self_vc: AppRouteVc, _data: Value<ContentSourceData>) -> NodeRenderingEntryVc {
         // Call without being keyed by data
         self_vc.entry()
-    }
-}
-
-#[turbo_tasks::value(shared)]
-pub struct UnsupportedDynamicMetadataIssue {
-    pub app_dir: FileSystemPathVc,
-    pub files: Vec<FileSystemPathVc>,
-}
-
-#[turbo_tasks::value_impl]
-impl Issue for UnsupportedDynamicMetadataIssue {
-    #[turbo_tasks::function]
-    fn severity(&self) -> IssueSeverityVc {
-        IssueSeverity::Warning.into()
-    }
-
-    #[turbo_tasks::function]
-    fn category(&self) -> StringVc {
-        StringVc::cell("unsupported".to_string())
-    }
-
-    #[turbo_tasks::function]
-    fn context(&self) -> FileSystemPathVc {
-        self.app_dir
-    }
-
-    #[turbo_tasks::function]
-    fn title(&self) -> StringVc {
-        StringVc::cell(
-            "Dynamic metadata from filesystem is currently not supported in Turbopack".to_string(),
-        )
-    }
-
-    #[turbo_tasks::function]
-    async fn description(&self) -> Result<StringVc> {
-        let mut files = self
-            .files
-            .iter()
-            .map(|file| file.to_string())
-            .try_join()
-            .await?;
-        files.sort();
-        Ok(StringVc::cell(format!(
-            "The following files were found in the app directory, but are not supported by \
-             Turbopack. They are ignored:\n{}",
-            FormatIter(|| files.iter().flat_map(|file| vec!["\n- ", file]))
-        )))
     }
 }

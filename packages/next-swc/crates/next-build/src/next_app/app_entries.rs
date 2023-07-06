@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use indexmap::IndexMap;
 use next_core::{
     app_structure::{find_app_dir_if_enabled, get_entrypoints, get_global_metadata, Entrypoint},
     mode::NextMode,
@@ -27,7 +28,7 @@ use turbopack_binding::{
     turbopack::{
         build::BuildChunkingContextVc,
         core::{
-            asset::{Asset, AssetVc},
+            asset::{Asset, AssetVc, AssetsVc},
             chunk::{availability_info::AvailabilityInfo, ChunkingContext, EvaluatableAssetsVc},
             compile_time_info::CompileTimeInfoVc,
             source_asset::SourceAssetVc,
@@ -62,7 +63,7 @@ pub struct AppEntry {
     pub rsc_entry: EcmascriptChunkPlaceableVc,
 }
 
-#[turbo_tasks::value(transparent)]
+#[turbo_tasks::value]
 pub struct AppEntries {
     /// All app entries.
     pub entries: Vec<AppEntryVc>,
@@ -161,10 +162,10 @@ pub async fn get_app_entries(
         ssr_resolve_options_context,
     );
 
-    let ecmascript_client_transition_name = "next-ecmascript-client-reference".to_string();
+    const ECMASCRIPT_CLIENT_TRANSITION_NAME: &str = "next-ecmascript-client-reference";
 
     transitions.insert(
-        ecmascript_client_transition_name.clone(),
+        ECMASCRIPT_CLIENT_TRANSITION_NAME.to_string(),
         NextEcmascriptClientReferenceTransitionVc::new(client_transition, ssr_transition).into(),
     );
 
@@ -178,7 +179,7 @@ pub async fn get_app_entries(
         app_dir,
         client_transition: Some(client_transition.into()),
         ecmascript_client_reference_transition_name: Some(StringVc::cell(
-            ecmascript_client_transition_name,
+            ECMASCRIPT_CLIENT_TRANSITION_NAME.to_string(),
         )),
     });
 
@@ -257,10 +258,13 @@ pub async fn get_app_entries(
     }))
 }
 
+/// Computes and returns all chunks for app entries. The chunks will be appended
+/// to `all_chunks`, and the chunking information will be added to the provided
+/// manifests.
 pub async fn compute_app_entries_chunks(
     app_entries: &AppEntries,
-    app_client_references_by_entry: &HashMap<AssetVc, Vec<ClientReference>>,
-    app_client_references_chunks: &HashMap<ClientReferenceType, ClientReferenceChunks>,
+    app_client_references_by_entry: &IndexMap<AssetVc, Vec<ClientReference>>,
+    app_client_references_chunks: &IndexMap<ClientReferenceType, ClientReferenceChunks>,
     rsc_chunking_context: BuildChunkingContextVc,
     client_chunking_context: EcmascriptChunkingContextVc,
     node_root: FileSystemPathVc,
@@ -272,13 +276,8 @@ pub async fn compute_app_entries_chunks(
     app_paths_manifest: &mut AppPathsManifest,
     all_chunks: &mut Vec<AssetVc>,
 ) -> Result<()> {
-    let app_client_shared_chunk =
-        get_app_shared_client_chunk(app_entries.client_runtime_entries, client_chunking_context);
-
-    let app_client_shared_chunks = client_chunking_context.evaluated_chunk_group(
-        app_client_shared_chunk.into(),
-        app_entries.client_runtime_entries,
-    );
+    let app_client_shared_chunks =
+        get_app_client_shared_chunks(app_entries.client_runtime_entries, client_chunking_context);
 
     let mut app_shared_client_chunks_paths = vec![];
     for chunk in app_client_shared_chunks.await?.iter().copied() {
@@ -297,7 +296,7 @@ pub async fn compute_app_entries_chunks(
         let app_entry = app_entry.await?;
 
         let app_entry_client_references = app_client_references_by_entry
-            .get(&app_entry.rsc_entry.into())
+            .get(&app_entry.rsc_entry.as_asset())
             .expect("app entry should have a corresponding client references list");
 
         let rsc_chunk = rsc_chunking_context.entry_chunk(
@@ -377,4 +376,18 @@ pub async fn get_app_shared_client_chunk(
         None,
         Value::new(AvailabilityInfo::Untracked),
     ))
+}
+
+#[turbo_tasks::function]
+pub fn get_app_client_shared_chunks(
+    app_client_runtime_entries: EvaluatableAssetsVc,
+    client_chunking_context: EcmascriptChunkingContextVc,
+) -> AssetsVc {
+    let app_client_shared_chunk =
+        get_app_shared_client_chunk(app_client_runtime_entries, client_chunking_context);
+
+    let app_client_shared_chunks = client_chunking_context
+        .evaluated_chunk_group(app_client_shared_chunk.into(), app_client_runtime_entries);
+
+    app_client_shared_chunks
 }

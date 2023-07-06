@@ -135,7 +135,7 @@ pub struct ManifestNode {
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestNodeEntry {
-    /// Turbopack module ID. The `None` case corresponds to "null".
+    /// Turbopack module ID.
     pub id: ModuleId,
     /// Export name.
     pub name: String,

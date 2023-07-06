@@ -301,7 +301,7 @@ impl Fold for NextDynamicPatcher {
                                             specifier: dynamically_imported_specifier.clone(),
                                         });
 
-                                        webpack_options(Expr::Ident(id_ident))
+                                        module_id_options(Expr::Ident(id_ident))
                                     }
                                 }
                             }

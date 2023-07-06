@@ -1,6 +1,7 @@
-use std::{collections::HashMap, future::Future};
+use std::future::Future;
 
 use anyhow::Result;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use turbo_tasks::{
     debug::ValueDebugFormat,
@@ -46,7 +47,7 @@ pub enum ClientReferenceType {
 }
 
 #[turbo_tasks::value(transparent)]
-pub struct ClientReferencesByEntry(HashMap<AssetVc, Vec<ClientReference>>);
+pub struct ClientReferencesByEntry(IndexMap<AssetVc, Vec<ClientReference>>);
 
 #[turbo_tasks::value_impl]
 impl ClientReferencesByEntryVc {

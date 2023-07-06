@@ -25,7 +25,10 @@ impl EcmascriptClientReferenceAssetVc {
     ///
     /// # Arguments
     ///
-    /// TODO(alexkirsz)
+    /// * `server_ident` - The identifier of the server asset, used to identify
+    ///   the client reference.
+    /// * `client_asset` - The client asset.
+    /// * `ssr_asset` - The SSR asset.
     #[turbo_tasks::function]
     pub fn new(
         server_ident: AssetIdentVc,

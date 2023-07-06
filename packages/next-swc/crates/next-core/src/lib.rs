@@ -14,6 +14,7 @@ mod fallback;
 pub mod loader_tree;
 pub mod manifest;
 pub mod mode;
+pub(crate) mod next_app;
 mod next_build;
 pub mod next_client;
 pub mod next_client_chunks;
@@ -41,9 +42,9 @@ pub mod url_node;
 mod util;
 mod web_entry_source;
 
-pub use app_source::{
-    app_context, create_app_source, UnsupportedDynamicMetadataIssue,
-    UnsupportedDynamicMetadataIssueVc,
+pub use app_source::create_app_source;
+pub use next_app::unsupported_dynamic_metadata_issue::{
+    UnsupportedDynamicMetadataIssue, UnsupportedDynamicMetadataIssueVc,
 };
 pub use page_loader::create_page_loader_entry_asset;
 pub use page_source::create_page_source;

@@ -29,7 +29,7 @@ impl NextMode {
     pub fn node_env(&self) -> &'static str {
         match self {
             NextMode::Development => "development",
-            NextMode::Build => "development",
+            NextMode::Build => "production",
         }
     }
 

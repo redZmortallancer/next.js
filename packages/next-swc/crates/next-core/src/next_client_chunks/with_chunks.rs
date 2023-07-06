@@ -35,7 +35,7 @@ fn modifier() -> StringVc {
     StringVc::cell("chunks".to_string())
 }
 
-#[turbo_tasks::value(shared)]
+#[turbo_tasks::value]
 pub struct WithChunksAsset {
     asset: EcmascriptChunkPlaceableVc,
     chunking_context: EcmascriptChunkingContextVc,

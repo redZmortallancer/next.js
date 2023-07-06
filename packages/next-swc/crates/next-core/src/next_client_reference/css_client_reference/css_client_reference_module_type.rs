@@ -16,6 +16,8 @@ use turbopack_binding::turbopack::{
 
 use super::css_client_reference_asset::CssClientReferenceAssetVc;
 
+/// Module type for CSS client references. This will be used to hook into CSS
+/// asset processing and inject a client reference on the server side.
 #[turbo_tasks::value]
 pub struct CssClientReferenceModuleType {
     client_transition: TransitionVc,
